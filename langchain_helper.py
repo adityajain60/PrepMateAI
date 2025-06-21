@@ -414,7 +414,15 @@ def generate_ideal_answer(
 
         Output:
         Return only a valid JSON object with this structure:
-        {{"ideal_answer": "<the ideal answer as bullet points>", "explanation": "<step-by-step explanation as bullet points>"}}
+        {{"ideal_answer": "• [First bullet point]\\n\\n• [Second bullet point]\\n\\n• [Third bullet point]", "explanation": "• [First explanation point]\\n\\n• [Second explanation point]\\n\\n• [Third explanation point]"}}
+
+        Guidelines:
+        - Format the ideal_answer and explanation as bullet points using "• " at the start of each line
+        - Use \\n\\n (double line break) between bullet points for better readability
+        - Each bullet point should be on its own line with proper spacing
+        - Make the content readable and well-structured
+        - Output only the JSON object, nothing else.
+        - Ensure the JSON is valid and parsable by Python's json.loads().
         """
     )
 
@@ -431,7 +439,7 @@ def generate_ideal_answer(
     try:
         return clean_and_parse_json(text)
     except Exception as e:
-        print(f"[resume_analysis] JSON decode error: {e}\nRaw output: {text}")
+        print(f"[generate_ideal_answer] JSON decode error: {e}\nRaw output: {text}")
         # Always return the original LLM output for debugging
         return {"error": "Invalid JSON", "raw_output": text}
 

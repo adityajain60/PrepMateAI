@@ -7,6 +7,14 @@ from components.pdfProcessing import process_resume_upload, process_jd_upload
 from components.resumeAnalysis import render_resume_analysis
 from components.home import render_home
 
+# --- Streamlit Configuration ---
+st.set_page_config(
+    page_title="PrepMate AI",
+    page_icon="🎯",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 # --- Sidebar and Input Collection ---
 page, resume_file, resume_textbox, jd_file, jd_textbox = sidebar.sidebar()
 

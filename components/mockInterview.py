@@ -40,7 +40,20 @@ def render_ideal_answer(ideal_answer_data: dict):
                 else:
                     st.markdown(f"- {item}")
         elif answer_content:
-            st.markdown(str(answer_content))
+            # Convert \n to actual line breaks and display properly
+            formatted_answer = answer_content.replace('\\n', '\n')
+            
+            # If the content doesn't have proper line breaks, try to format it
+            if '•' in formatted_answer and '\n' not in formatted_answer:
+                # Split by bullet points and format properly
+                bullet_points = formatted_answer.split('•')
+                formatted_bullets = []
+                for point in bullet_points:
+                    if point.strip():
+                        formatted_bullets.append(f"• {point.strip()}")
+                formatted_answer = '\n\n'.join(formatted_bullets)
+            
+            st.markdown(formatted_answer)
         else:
             st.warning("No ideal answer available.")
 
@@ -53,7 +66,20 @@ def render_ideal_answer(ideal_answer_data: dict):
                 for point in explanation:
                     st.markdown(f"- {point}")
             else:
-                st.markdown(str(explanation))
+                # Convert \n to actual line breaks and display properly
+                formatted_explanation = explanation.replace('\\n', '\n')
+                
+                # If the content doesn't have proper line breaks, try to format it
+                if '•' in formatted_explanation and '\n' not in formatted_explanation:
+                    # Split by bullet points and format properly
+                    bullet_points = formatted_explanation.split('•')
+                    formatted_bullets = []
+                    for point in bullet_points:
+                        if point.strip():
+                            formatted_bullets.append(f"• {point.strip()}")
+                    formatted_explanation = '\n\n'.join(formatted_bullets)
+                
+                st.markdown(formatted_explanation)
 
 
 def mock_interview_ui(

@@ -1,0 +1,15 @@
+[ui]
+# Show the sidebar by default
+navigationMode = "sidebar"
+
+[client]
+# Enable sidebar by default
+showSidebarNavigation = true
+
+[theme]
+# Force light theme with explicit colors
+base = "light"
+primaryColor = "#4F8BF9"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F0F2F6"
+textColor = "#262730"
