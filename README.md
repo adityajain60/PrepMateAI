@@ -1,4 +1,4 @@
-# PrepMate AI: Your Personal AI-Powered Career Coach
+# PrepMate AI: Your One Stop Solution for Interview Preparation
 
 PrepMate AI is a comprehensive Streamlit web application designed to help users prepare for job interviews and optimize their resumes. It leverages the power of Large Language Models (LLMs) through the Groq API to provide instant, insightful feedback on resumes and conduct realistic mock interviews.
 
