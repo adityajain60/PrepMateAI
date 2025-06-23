@@ -13,8 +13,8 @@ import re
 load_dotenv()
 
 
-# Initialize the embeddings with the model
-embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+def get_embeddings():
+    return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 
 def create_vectorDB_from_pdf(pdf_path: str, persist_path: str = "./faiss_index"):
@@ -27,6 +27,7 @@ def create_vectorDB_from_pdf(pdf_path: str, persist_path: str = "./faiss_index")
     docs = text_splitter.split_documents(documents)
 
     # Step 3: Create embeddings
+    embeddings = get_embeddings()
     
 
     # Step 4: Create FAISS vector store
@@ -41,8 +42,8 @@ def create_vectorDB_from_text(text: str, persist_path: str = "./faiss_index"):
     docs = text_splitter.create_documents([text])
 
     # Step 2: Create embeddings
-
-
+    embeddings = get_embeddings()
+    
     # Step 3: Create FAISS vector store
     db = FAISS.from_documents(docs, embeddings)
 
