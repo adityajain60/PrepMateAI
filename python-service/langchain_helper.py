@@ -14,7 +14,8 @@ load_dotenv()
 
 
 def get_embeddings():
-    return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    return HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-MiniLM-L3-v2")
+
 
 
 def create_vectorDB_from_pdf(pdf_path: str, persist_path: str = "./faiss_index"):
