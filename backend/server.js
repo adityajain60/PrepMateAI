@@ -11,7 +11,10 @@ DBconnection();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors({
-    origin: ["http://localhost:5173", "http://localhost:3000"],
+    origin: [
+        "https://prep-mateai.vercel.app",
+        "http://localhost:5173",
+    ],
     credentials: true,
 }));
 
