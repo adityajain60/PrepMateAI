@@ -1,0 +1,15 @@
+flask==2.3.3
+flask-cors==4.0.0
+requests==2.31.0
+PyPDF2==3.0.1
+
+
+langchain
+langchain-community
+faiss-cpu
+pypdf
+sentence-transformers
+python-dotenv
+langchain-groq
+streamlit
+plotly
