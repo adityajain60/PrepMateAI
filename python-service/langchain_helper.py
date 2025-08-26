@@ -12,13 +12,16 @@ import re
 
 load_dotenv()
 
+llm = ChatGroq(
+  api_key=os.getenv("GROQ_API_KEY"),
+  model= "llama-3.3-70b-versatile",
+  temperature= 0.85,
+)
 
-def get_embeddings():
-    return HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-MiniLM-L3-v2")
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-MiniLM-L3-v2");
 
 
-
-def create_vectorDB_from_pdf(pdf_path: str, persist_path: str = "./faiss_index"):
+def create_vectorDB_from_pdf(pdf_path: str):
     # Step 1: Load the PDF
     loader = PyPDFLoader(pdf_path)
     documents = loader.load()
@@ -28,26 +31,21 @@ def create_vectorDB_from_pdf(pdf_path: str, persist_path: str = "./faiss_index")
     docs = text_splitter.split_documents(documents)
 
     # Step 3: Create embeddings
-    embeddings = get_embeddings()
-    
 
     # Step 4: Create FAISS vector store
     db = FAISS.from_documents(docs, embeddings)
-
     return db
 
 
-def create_vectorDB_from_text(text: str, persist_path: str = "./faiss_index"):
+def create_vectorDB_from_text(text: str):
     # Step 1: Split the text
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     docs = text_splitter.create_documents([text])
 
     # Step 2: Create embeddings
-    embeddings = get_embeddings()
-    
+
     # Step 3: Create FAISS vector store
     db = FAISS.from_documents(docs, embeddings)
-
     return db
 
 
@@ -57,10 +55,7 @@ def extract_info(db, query):
     return content
 
 
-def clean_and_parse_json(text: str):
-    import re
-    import json
-
+def _clean_and_parse_json(text: str):
     # Remove Markdown code block markers (triple backticks)
     text = re.sub(r'^```(?:json)?\s*', '', text.strip(), flags=re.IGNORECASE)
     text = re.sub(r'```\s*$', '', text, flags=re.IGNORECASE)
@@ -83,15 +78,23 @@ def clean_and_parse_json(text: str):
         return None
 
 
+# Initializes the LLM, creates a chain, invokes it, and handles JSON parsing.
+def _invoke_llm_chain(prompt_template: PromptTemplate, input_data: dict):
+    chain: Runnable = prompt_template | llm
+    try:
+        response = chain.invoke(input_data)
+        text = response.content.strip()
+        parsed_json = _clean_and_parse_json(text)
+        if parsed_json is None:
+            print(f"[LLM Chain] JSON decode error. Raw output: {text}")
+            return {"error": "Invalid JSON response from model", "raw_output": text}
+        return parsed_json
+    except Exception as e:
+        print(f"[LLM Chain] Invocation error: {e}")
+        return {"error": f"An error occurred during LLM invocation: {str(e)}", "raw_output": ""}
+
+
 def resume_analysis(resume_content: str, jd_content: str):
-    """
-    Analyze a candidate's resume against a job description and return a structured JSON object with detailed feedback, ATS score, strengths, weaknesses, and suggestions.
-    """
-    llm = ChatGroq(
-        api_key=os.getenv("GROQ_API_KEY"),
-        model="llama-3.3-70b-versatile",
-        temperature=0.85,
-    )
     prompt = PromptTemplate(
         input_variables=["resume_content", "jd_content"],
         template="""
@@ -197,24 +200,13 @@ def resume_analysis(resume_content: str, jd_content: str):
         """
     )
 
-    chain: Runnable = prompt | llm
-
-    response = chain.invoke(
+    return _invoke_llm_chain(
+        prompt,
         {
             "resume_content": resume_content,
             "jd_content": jd_content,
         }
     )
-    print("LLM raw response:", response)
-
-    text = response.content.strip()
-    
-    try:
-        return clean_and_parse_json(text)
-    except Exception as e:
-        print(f"[resume_analysis] JSON decode error: {e}\nRaw output: {text}")
-        # Always return the original LLM output for debugging
-        return {"error": "Invalid JSON", "raw_output": text}
 
 
 def generate_interview_questions(
@@ -228,17 +220,17 @@ def generate_interview_questions(
     skill_focus: str,
     num_questions: int
     ):
-    
-    
-    
-    llm = ChatGroq(
-        api_key=os.getenv("GROQ_API_KEY"),
-        model="llama-3.3-70b-versatile",
-        temperature=0.85,
-    )
+    num_questions = int(num_questions)
+    print(num_questions)
+
+    # If question_type is a string, split it into a list
+    if isinstance(question_type, list):
+      question_type = ", ".join(question_type)
+
     prompt = PromptTemplate(
         input_variables=[
-            "resume_content", "jd_content", "question_difficulty", "question_type", "experience_level", "round_type", "target_job_role", "skill_focus", "num_questions"
+            "resume_content", "jd_content", "question_difficulty", "question_type", 
+            "experience_level", "round_type", "target_job_role", "skill_focus", "num_questions"
         ],
         template="""
         You are an expert technical interviewer.
@@ -263,20 +255,14 @@ def generate_interview_questions(
         - Each question must be relevant to the candidate's experience, the job description, and the above requirements.
         - Vary the style and depth of questions as appropriate for the experience level and round type.
         - Do not repeat or rephrase questions.
-        - For each question, output a JSON object with:
-            - question_type: category of the question
-            - question_difficulty: difficulty level
-            - question_num: the question number (starting from 1)
-            - question: the question text
-        - Output only the JSON object, nothing else.
-        - Do NOT wrap the JSON in markdown code blocks (no ```json or ```).
-        - Ensure the JSON is valid and parsable by Python's json.loads().
+        - For each question, output a JSON object with: question_type, question_difficulty, question_num, question.
+        - Output ONLY the JSON array. Do not include any other text, titles, or markdown.
+        - Ensure the output is valid JSON.
         """
     )
 
-    chain: Runnable = prompt | llm
-
-    response = chain.invoke(
+    return _invoke_llm_chain(
+        prompt,
         {
             "resume_content": resume_content,
             "jd_content": jd_content,
@@ -286,16 +272,9 @@ def generate_interview_questions(
             "round_type": round_type,
             "target_job_role": target_job_role,
             "skill_focus": skill_focus,
-            "num_questions": num_questions,
+            "num_questions": num_questions
         }
     )
-    text = response.content.strip()
-    try:
-        return clean_and_parse_json(text)
-    except Exception as e:
-        print(f"[resume_analysis] JSON decode error: {e}\nRaw output: {text}")
-        # Always return the original LLM output for debugging
-        return {"error": "Invalid JSON", "raw_output": text}
 
 
 def answer_feedback(
@@ -304,12 +283,6 @@ def answer_feedback(
     question: str,
     answer: str
     ):
-   
-    llm = ChatGroq(
-        api_key=os.getenv("GROQ_API_KEY"),
-        model="llama-3.3-70b-versatile",
-        temperature=0.85,
-    )
     prompt = PromptTemplate(
         input_variables=["resume_content", "jd_content", "question", "answer"],
         template="""
@@ -348,9 +321,8 @@ def answer_feedback(
         """
     )
 
-    chain: Runnable = prompt | llm
-
-    response = chain.invoke(
+    return _invoke_llm_chain(
+        prompt,
         {
             "resume_content": resume_content,
             "jd_content": jd_content,
@@ -358,13 +330,6 @@ def answer_feedback(
             "answer": answer,
         }
     )
-    text = response.content.strip()
-    try:
-        return clean_and_parse_json(text)
-    except Exception as e:
-        print(f"[resume_analysis] JSON decode error: {e}\nRaw output: {text}")
-        # Always return the original LLM output for debugging
-        return {"error": "Invalid JSON", "raw_output": text}
 
 
 def generate_ideal_answer(
@@ -372,15 +337,6 @@ def generate_ideal_answer(
     jd_content: str,
     question: str
     ):
-    """
-    Generate an ideal answer for the given interview question, tailored to the candidate's resume and the job description.
-    Returns a JSON object: {"ideal_answer": <answer>}.
-    """
-    llm = ChatGroq(
-        api_key=os.getenv("GROQ_API_KEY"),
-        model="llama-3.3-70b-versatile",
-        temperature=0.85,
-    )
     prompt = PromptTemplate(
         input_variables=["resume_content", "jd_content", "question"],
         template="""
@@ -422,19 +378,11 @@ def generate_ideal_answer(
         """
     )
 
-    chain: Runnable = prompt | llm
-
-    response = chain.invoke(
+    return _invoke_llm_chain(
+        prompt,
         {
             "resume_content": resume_content,
             "jd_content": jd_content,
             "question": question,
         }
     )
-    text = response.content.strip()
-    try:
-        return clean_and_parse_json(text)
-    except Exception as e:
-        print(f"[generate_ideal_answer] JSON decode error: {e}\nRaw output: {text}")
-        # Always return the original LLM output for debugging
-        return {"error": "Invalid JSON", "raw_output": text} 

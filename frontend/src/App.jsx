@@ -1,77 +1,45 @@
-import React from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import Navbar from "./components/Navbar.jsx";
-import Home from "./pages/Home.jsx";
-import Login from "./pages/Login.jsx";
-import Signup from "./pages/Signup.jsx";
-import Dashboard from "./pages/Dashboard.jsx";
-import ResumeAnalysis from "./pages/ResumeAnalysis.jsx";
-import MockInterview from "./pages/MockInterview.jsx";
-import ResumeHistory from "./pages/ResumeHistory.jsx";
-import InterviewHistory from "./pages/InterviewHistory.jsx";
+import { Routes, Route, Navigate } from "react-router-dom";
+import { Toaster } from "react-hot-toast";
+import { useAuthContext } from "./context/AuthContext";
 
-// A wrapper to protect routes that require authentication
-const ProtectedRoute = ({ children }) => {
-  const token = localStorage.getItem('token');
-  return token ? children : <Navigate to="/login" />;
-};
+// Components
+import Navbar from "./components/Navbar";
+
+// Pages
+import Home from "./pages/home/Home";
+import Login from "./pages/login/LoginPage";
+import Signup from "./pages/signup/SignupPage";
+import Dashboard from "./pages/dashboard/Dashboard";
+import ResumeAnalysis from "./pages/resumeAnalysis/ResumeAnalysis";
+import ResumeHistory from "./pages/resumeHistory/ResumeHistory";
+import InterviewHistory from "./pages/interviewHistory/InterviewHistory";
+import MockInterview from "./pages/mockInterview/MockInterview";
 
 function App() {
+  const { authUser } = useAuthContext();
+
   return (
-    <Router>
+    <div className="min-h-screen bg-gray-100">
       <Navbar />
       <Routes>
-        {/* Public Routes */}
+        {/* Always public */}
         <Route path="/" element={<Home />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
+        <Route path="/login" element={!authUser ? <Login /> : <Navigate to="/dashboard" />} />
+        <Route path="/signup" element={!authUser ? <Signup /> : <Navigate to="/dashboard" />} />
 
-        {/* Protected Routes */}
-        <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/resume-analysis"
-          element={
-            <ProtectedRoute>
-              <ResumeAnalysis />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/mock-interview"
-          element={
-            <ProtectedRoute>
-              <MockInterview />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/resume-history"
-          element={
-            <ProtectedRoute>
-              <ResumeHistory />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/interview-history"
-          element={
-            <ProtectedRoute>
-              <InterviewHistory />
-            </ProtectedRoute>
-          }
-        />
-        
-        {/* Fallback Route */}
+        {/* Protected */}
+        <Route path="/dashboard" element={authUser ? <Dashboard /> : <Navigate to="/login" />} />
+        <Route path="/resume-analysis" element={authUser ? <ResumeAnalysis /> : <Navigate to="/login" />} />
+        <Route path="/resume-history" element={authUser ? <ResumeHistory /> : <Navigate to="/login" />} />
+        <Route path="/interview-history" element={authUser ? <InterviewHistory /> : <Navigate to="/login" />} />
+        <Route path="/mock-interview" element={authUser ? <MockInterview /> : <Navigate to="/login" />} />
+
+        {/* Fallback */}
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
-    </Router>
+
+      <Toaster position="top-center" reverseOrder={false} />
+    </div>
   );
 }
 

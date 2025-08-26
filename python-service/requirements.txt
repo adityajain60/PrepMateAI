@@ -1,13 +1,10 @@
 flask==2.3.3
 flask-cors==4.0.0
-PyPDF2==3.0.1
 python-dotenv
-
 langchain
 langchain-community
 faiss-cpu
 sentence-transformers
 langchain-groq
-
 pypdf
-
+PyPDF2==3.0.1

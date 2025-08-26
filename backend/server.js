@@ -1,15 +1,27 @@
-const express = require("express");
+import express from "express";
+import cors from "cors";
+import connectToMongoDB from "./db/connectToMongoDB.js";
+import dotenv from "dotenv";
+import cookieParser from "cookie-parser";
+
+import authRouter from "./routers/auth.router.js";
+import resumeRouter from "./routers/resume.router.js";
+import interviewRouter from "./routers/interview.router.js";
+import metricsRouter from "./routers/metrics.router.js";
+
+dotenv.config();
+
+// Initialize Express
+// This creates an Express application instance.
 const app = express();
-const cors = require("cors");
-const { DBconnection } = require("./database/db.js");
-require("dotenv").config();
+
 
 // DB Connection
-DBconnection();
+connectToMongoDB();
 
 // Middleware
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 app.use(cors({
     origin: [
         "https://prep-mateai.vercel.app",
@@ -18,39 +30,24 @@ app.use(cors({
     credentials: true,
 }));
 
-// Routers
-const authRouter = require("./routers/auth.js");
-const userRouter = require("./routers/users.js");
-// const historyRouter = require("./routers/history.js");
-const resumeRouter = require("./routers/resume.js");
-const interviewRouter = require("./routers/interview.js");
-const metricsRouter = require("./routers/metrics.js");
 
-// API Endpoints
-app.use("/api", authRouter); // Handles /api/signup and /api/login
-app.use("/api/user", userRouter); // Handles /api/user/me
-// app.use("/api/history", historyRouter); // Handles /api/history/resumes and /api/history/interviews
-app.use("/api/resume", resumeRouter); // Handles /api/resume/analyze and /api/resume/history
-app.use("/api/interview", interviewRouter); // Handles /api/interview/generate and /api/interview/history
-app.use("/api/metrics", metricsRouter); // Handles /api/metrics
+
+// Routers
+app.use("/api/auth", authRouter);
+app.use("/api/resume", resumeRouter);
+app.use("/api/interview", interviewRouter); 
+app.use("/api/metrics", metricsRouter);
+
+
+
 
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "OK", message: "PrepMate AI Server is running" });
 });
+// A simple endpoint that monitoring services can hit to confirm the server is running.
 
-// Test authentication endpoint
-app.get("/api/test-auth", (req, res) => {
-  res.json({ 
-    status: "OK", 
-    message: "Auth test endpoint",
-    headers: req.headers.authorization ? "Authorization header present" : "No authorization header"
-  });
-});
 
-app.get("/home", (req, res) => {
-  res.send("PrepMate AI Home Page");
-});
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -61,10 +58,17 @@ app.use((err, req, res, next) => {
   });
 });
 
+//This is a global "catch-all" for any errors that occur in your route handlers. If a database query fails, for instance, this middleware catches the error and sends a standardized JSON response, preventing the server from crashing.
+
+
+
 // 404 handler
 app.use("*", (req, res) => {
   res.status(404).json({ message: "Route not found" });
 });
+// Any request that hasn't been matched by a previous route will be caught here, and a 404 Not Found error will be sent.
+
+
 
 // Start server
 const PORT = process.env.PORT || 5000;

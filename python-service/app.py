@@ -1,439 +1,200 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import langchain_helper as lch
-import os
 from dotenv import load_dotenv
-import PyPDF2
-import io
+import os
+from functools import wraps
+
+import langchain_helper as lch
 
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
-def cleanup_temp_files():
-    """Clean up temporary PDF files"""
-    temp_files = ["temp_resume.pdf", "temp_jd.pdf"]
-    for file in temp_files:
-        if os.path.exists(file):
-            try:
-                os.remove(file)
-            except:
-                pass
+TEMP_FILES = {
+    "resume": "temp_resume.pdf",
+    "job_desc": "temp_job_desc.pdf"
+}
 
-def extract_text_from_pdf(pdf_file):
-    """Extract text from uploaded PDF file."""
+def _cleanup_temp_files():
+    """A simple function to remove temporary files."""
+    for path in TEMP_FILES.values():
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError as e:
+                print(f"Failed to remove temp file {path}: {e}")
+
+
+def extract_resume_and_jd(request, resume_query, jd_query):
+    """
+    Parse a Flask request that may contain PDF files or plain‑text fields
+    for a resume and a job description, build vector DBs for each, and
+    return (resume_info, jd_info, None) on success or
+    (None, None, flask_response_tuple) on failure.
+    """
+    is_multipart = "multipart/form-data" in (request.content_type or "")
     try:
-        pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_file.read()))
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text()
-        return text.strip()
-    except Exception as e:
-        raise Exception(f"Error reading PDF: {str(e)}")
+        # ---------- Resume ----------
+        resume_db = None
+        if is_multipart and "resume" in request.files and request.files["resume"].filename:
+            file = request.files["resume"]
+            if not file.filename.lower().endswith(".pdf"):
+                return None, None, (jsonify({"error": "Resume must be a PDF"}), 400)
+
+            # If lch supports file‑like objects, pass the stream directly.
+            # Otherwise, save to a temp path.
+            file.save(TEMP_FILES["resume"])
+            resume_db = lch.create_vectorDB_from_pdf(TEMP_FILES["resume"])
+        else:
+            resume_text = (
+                request.form.get("resumeText") if is_multipart
+                else (request.get_json(silent=True) or {}).get("resumeText", "")
+            ).strip()
+            if resume_text:
+                resume_db = lch.create_vectorDB_from_text(resume_text)
+
+        if resume_db is None:
+            return None, None, (jsonify({"error": "Missing resume file or text"}), 400)
+
+        resume_info = lch.extract_info(resume_db, resume_query)
+
+        # ---------- Job description ----------
+        jd_db = None
+        if is_multipart and "jobDescriptionFile" in request.files and request.files["jobDescriptionFile"].filename:
+            file = request.files["jobDescriptionFile"]
+            if not file.filename.lower().endswith(".pdf"):
+                return None, None, (jsonify({"error": "Job description must be a PDF"}), 400)
+
+            file.save(TEMP_FILES["job_desc"])
+            jd_db = lch.create_vectorDB_from_pdf(TEMP_FILES["job_desc"])
+        else:
+            jd_text = (
+                request.form.get("jobDescription") if is_multipart
+                else (request.get_json(silent=True) or {}).get("jobDescription", "")
+            ).strip()
+            if jd_text:
+                jd_db = lch.create_vectorDB_from_text(jd_text)
+
+        if jd_db is None:
+            return None, None, (jsonify({"error": "Missing job description file or text"}), 400)
+
+        jd_info = lch.extract_info(jd_db, jd_query)
+
+        return resume_info, jd_info, None
+
+    except Exception as exc:
+        # Optional: app.logger.exception("Document processing failed")
+        return None, None, (jsonify({"error": f"Document processing failed: {exc}"}), 500)
+
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    return jsonify({"status": "OK", "message": "Python AI Service is running"})
+    return jsonify({"status": "OK", "message": "AI service running"})
+
 
 @app.route('/resume/analyze', methods=['POST'])
 def analyze_resume():
+    print("Content‑Type ->", request.content_type)
+    print("Raw data len ->", len(request.data)) 
     try:
-        resume_content = ""
-        jd_content = ""
-        
-        # Handle multipart form data (file upload)
-        if request.content_type and 'multipart/form-data' in request.content_type:
-            if 'resume' in request.files:
-                resume_file = request.files['resume']
-                if resume_file.filename.endswith('.pdf'):
-                    # Use RAG workflow: Create FAISS vector DB and extract info
-                    with open("temp_resume.pdf", "wb") as f:
-                        f.write(resume_file.read())
-                    resumeDB = lch.create_vectorDB_from_pdf("temp_resume.pdf")
-                    resume_content = lch.extract_info(resumeDB, "Extract all important information from this resume including skills, education, work experience, projects, certifications, and achievements.")
-                else:
-                    return jsonify({"error": "Resume must be a PDF file"}), 400
-            elif 'resumeText' in request.form:
-                resume_text = request.form.get('resumeText', '').strip()
-                # Use RAG workflow: Create FAISS vector DB and extract info
-                resumeDB = lch.create_vectorDB_from_text(resume_text)
-                resume_content = lch.extract_info(resumeDB, "Extract all important information from this resume including skills, education, work experience, projects, certifications, and achievements.")
-            else:
-                return jsonify({"error": "Resume file or text is required"}), 400
-            
-            if 'jobDescriptionFile' in request.files:
-                jd_file = request.files['jobDescriptionFile']
-                if jd_file.filename.endswith('.pdf'):
-                    # Use RAG workflow: Create FAISS vector DB and extract info
-                    with open("temp_jd.pdf", "wb") as f:
-                        f.write(jd_file.read())
-                    jdDB = lch.create_vectorDB_from_pdf("temp_jd.pdf")
-                    jd_content = lch.extract_info(jdDB, "Extract key requirements and skills from this job description.")
-                else:
-                    return jsonify({"error": "Job description must be a PDF file"}), 400
-            elif 'jobDescription' in request.form:
-                jd_text = request.form.get('jobDescription', '').strip()
-                # Use RAG workflow: Create FAISS vector DB and extract info
-                jdDB = lch.create_vectorDB_from_text(jd_text)
-                jd_content = lch.extract_info(jdDB, "Extract key requirements and skills from this job description.")
-            else:
-                return jsonify({"error": "Job description file or text is required"}), 400
-        else:
-            # Handle JSON data (text input) - also use RAG
-            data = request.get_json()
-            resume_text = data.get('resumeText', '').strip()
-            jd_text = data.get('jobDescription', '').strip()
-            
-            # Use RAG workflow for both resume and JD
-            if resume_text:
-                resumeDB = lch.create_vectorDB_from_text(resume_text)
-                resume_content = lch.extract_info(resumeDB, "Extract all important information from this resume including skills, education, work experience, projects, certifications, and achievements.")
-            
-            if jd_text:
-                jdDB = lch.create_vectorDB_from_text(jd_text)
-                jd_content = lch.extract_info(jdDB, "Extract key requirements and skills from this job description.")
-        
-        if not resume_content:
-            return jsonify({"error": "Resume content is required"}), 400
-        if not jd_content:
-            return jsonify({"error": "Job description is required"}), 400
-        
-        # Call the LLM analysis with enhanced RAG-extracted content
-        result = lch.resume_analysis(resume_content, jd_content)
-        
-        # Check if the result has an error
-        if isinstance(result, dict) and result.get('error'):
-            cleanup_temp_files()
-            return jsonify({"error": "Analysis failed", "details": result.get('raw_output', 'Unknown error')}), 500
-        
-        # Format the response for the frontend
-        if isinstance(result, dict) and 'ats_score' in result:
-            # Extract the match score for the frontend
-            match_score = result.get('ats_score', {}).get('total_score', 0)
-            
-            # Create a simplified response structure for the frontend
-            analysis_summary = result.get('resume_summary', '')
-            if result.get('jd_summary'):
-                analysis_summary += f"\n\nJob Description Summary: {result.get('jd_summary')}"
-            
-            strengths = []
-            if result.get('strengths'):
-                for category, items in result['strengths'].items():
-                    if isinstance(items, list):
-                        strengths.extend(items)
-            
-            suggestions = []
-            if result.get('suggestions'):
-                for category, items in result['suggestions'].items():
-                    if isinstance(items, list):
-                        suggestions.extend(items)
-                    elif isinstance(items, dict):
-                        for subcategory, subitems in items.items():
-                            if isinstance(subitems, list):
-                                suggestions.extend(subitems)
-            
-            cleanup_temp_files()
-            return jsonify({
-                "matchScore": match_score,
-                "analysisSummary": analysis_summary,
-                "strengths": strengths,
-                "suggestions": suggestions,
-                "fullAnalysis": result  # Include the full analysis for detailed views
-            })
-        else:
-            cleanup_temp_files()
-            return jsonify({"error": "Invalid analysis result format"}), 500
+        resume_query = "Extract skills, education, work experience, and projects from resume."
+        jd_query = "Extract required skills and technologies from job description."
+
+        resume_text, jd_text, error_response = extract_resume_and_jd(request, resume_query, jd_query)
+        if error_response:
+            return error_response
+
+        analysis = lch.resume_analysis(resume_text, jd_text)
+        return jsonify(analysis) if not analysis.get("error") else (jsonify(analysis), 500)
     
     except Exception as e:
-        cleanup_temp_files()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"Unexpected server error: {str(e)}"}), 500
+    finally:
+        _cleanup_temp_files()
+
 
 @app.route('/interview/generate', methods=['POST'])
-def generate_questions():
+def generate_mock_questions():
     try:
-        resume_content = ""
-        jd_content = ""
-        
-        # Handle multipart form data (file upload)
-        if request.content_type and 'multipart/form-data' in request.content_type:
-            if 'resume' in request.files:
-                resume_file = request.files['resume']
-                if resume_file.filename.endswith('.pdf'):
-                    # Use RAG workflow: Create FAISS vector DB and extract info
-                    with open("temp_resume.pdf", "wb") as f:
-                        f.write(resume_file.read())
-                    resumeDB = lch.create_vectorDB_from_pdf("temp_resume.pdf")
-                    resume_content = lch.extract_info(resumeDB, "Extract all important information from this resume including skills, education, work experience, projects, certifications, and achievements.")
-                else:
-                    return jsonify({"error": "Resume must be a PDF file"}), 400
-            elif 'resumeText' in request.form:
-                resume_text = request.form.get('resumeText', '').strip()
-                # Use RAG workflow: Create FAISS vector DB and extract info
-                resumeDB = lch.create_vectorDB_from_text(resume_text)
-                resume_content = lch.extract_info(resumeDB, "Extract all important information from this resume including skills, education, work experience, projects, certifications, and achievements.")
-            else:
-                return jsonify({"error": "Resume file or text is required"}), 400
-            
-            if 'jobDescriptionFile' in request.files:
-                jd_file = request.files['jobDescriptionFile']
-                if jd_file.filename.endswith('.pdf'):
-                    # Use RAG workflow: Create FAISS vector DB and extract info
-                    with open("temp_jd.pdf", "wb") as f:
-                        f.write(jd_file.read())
-                    jdDB = lch.create_vectorDB_from_pdf("temp_jd.pdf")
-                    jd_content = lch.extract_info(jdDB, "Extract key requirements and skills from this job description.")
-                else:
-                    return jsonify({"error": "Job description must be a PDF file"}), 400
-            elif 'jobDescription' in request.form:
-                jd_text = request.form.get('jobDescription', '').strip()
-                # Use RAG workflow: Create FAISS vector DB and extract info
-                jdDB = lch.create_vectorDB_from_text(jd_text)
-                jd_content = lch.extract_info(jdDB, "Extract key requirements and skills from this job description.")
-            else:
-                return jsonify({"error": "Job description file or text is required"}), 400
-        else:
-            # Handle JSON data (text input) - also use RAG
-            data = request.get_json()
-            resume_text = data.get('resumeText', '').strip()
-            jd_text = data.get('jobDescription', '').strip()
-            
-            # Use RAG workflow for both resume and JD
-            if resume_text:
-                resumeDB = lch.create_vectorDB_from_text(resume_text)
-                resume_content = lch.extract_info(resumeDB, "Extract all important information from this resume including skills, education, work experience, projects, certifications, and achievements.")
-            
-            if jd_text:
-                jdDB = lch.create_vectorDB_from_text(jd_text)
-                jd_content = lch.extract_info(jdDB, "Extract key requirements and skills from this job description.")
-        
-        if not resume_content:
-            return jsonify({"error": "Resume content is required"}), 400
-        if not jd_content:
-            return jsonify({"error": "Job description is required"}), 400
-        
-        # Get interview configuration parameters
-        if request.content_type and 'multipart/form-data' in request.content_type:
-            question_difficulty = request.form.get('questionDifficulty', "Medium")
-            question_types = request.form.get('questionType', "Technical")
-            # Handle comma-separated string from backend
-            if ',' in question_types:
-                question_types = [q.strip() for q in question_types.split(',')]
-            else:
-                question_types = [question_types]
-            experience_level = request.form.get('experienceLevel', "1-2 years")
-            round_type = request.form.get('roundType', "Technical")
-            target_job_role = request.form.get('targetJobRole', "Software Engineer")
-            skill_focus = request.form.get('skillFocus', "Python, SQL")
-            num_questions = int(request.form.get('numQuestions', 5))
-        else:
-            # Handle JSON data
-            data = request.get_json()
-            question_difficulty = data.get('questionDifficulty', "Medium")
-            question_types = data.get('questionType', "Technical")
-            if isinstance(question_types, list):
-                question_types = question_types
-            else:
-                question_types = [question_types]
-            experience_level = data.get('experienceLevel', "1-2 years")
-            round_type = data.get('roundType', "Technical")
-            target_job_role = data.get('targetJobRole', "Software Engineer")
-            skill_focus = data.get('skillFocus', "Python, SQL")
-            num_questions = int(data.get('numQuestions', 5))
-        
-        # Handle "Any" difficulty
-        if question_difficulty == "Any":
-            question_difficulty = "Mixed"
-        
-        # Convert question types list to string for the LLM
-        question_type_str = ", ".join(question_types)
-        
-        # Call the LLM question generation with enhanced RAG-extracted content
-        result = lch.generate_interview_questions(
-            resume_content, jd_content, question_difficulty, question_type_str,
-            experience_level, round_type, target_job_role, skill_focus, num_questions
+        resume_query = "Extract skills, experience, and projects from resume for mock questions."
+        jd_query = "Extract responsibilities and requirements from job description."
+
+        resume_text, jd_text, error_response = extract_resume_and_jd(request, resume_query, jd_query)
+        if error_response:
+            return error_response
+
+        data = request.form if 'multipart/form-data' in request.content_type else request.get_json()
+
+        questions = lch.generate_interview_questions(
+            resume_content=resume_text,
+            jd_content=jd_text,
+            num_questions=int(data.get('numQuestions', 5)),
+            skill_focus=data.get('skillFocus', "As per JD"),
+            question_type=data.get('questionType', "Technical, Behavioral"),
+            question_difficulty=data.get('questionDifficulty', "Medium"),
+            experience_level=data.get('experienceLevel', "1-2 years"),
+            round_type=data.get('roundType', "Technical"),
+            target_job_role=data.get('targetJobRole', "Software Engineer")
         )
+
+        if isinstance(questions, dict) and questions.get("error"):
+            return jsonify(questions), 500
         
-        # Check if the result has an error
-        if isinstance(result, dict) and result.get('error'):
-            cleanup_temp_files()
-            return jsonify({"error": "Question generation failed", "details": result.get('raw_output', 'Unknown error')}), 500
-        
-        # Format the response for the frontend
-        if isinstance(result, list) and len(result) > 0:
-            # Extract just the questions for the frontend
-            questions = []
-            for item in result:
-                if isinstance(item, dict) and 'question' in item:
-                    questions.append(item['question'])
-            
-            cleanup_temp_files()
-            return jsonify({
-                "questions": questions,
-                "fullQuestions": result  # Include the full questions for detailed views
-            })
-        else:
-            cleanup_temp_files()
-            return jsonify({"error": "Invalid question generation result format"}), 500
+        return jsonify(questions)
     
     except Exception as e:
-        cleanup_temp_files()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"Unexpected server error: {str(e)}"}), 500
+    finally:
+        _cleanup_temp_files()
+
 
 @app.route('/answer-feedback', methods=['POST'])
-def get_answer_feedback():
+def feedback_on_answer():
     try:
+        resume_query = "Extract relevant resume details for answer evaluation."
+        jd_query = "Extract job requirements for answer evaluation."
+
+        resume_text, jd_text, error_response = extract_resume_and_jd(request, resume_query, jd_query)
+        if error_response:
+            return error_response
+
         data = request.get_json()
-        resume_content_raw = data.get('resume_content')
-        jd_content_raw = data.get('jd_content')
-        question = data.get('question')
-        answer = data.get('answer')
-        
-        if not all([resume_content_raw, jd_content_raw, question, answer]):
-            return jsonify({"error": "All fields are required"}), 400
-        
-        # Use RAG workflow: Create FAISS vector DBs and extract info
-        resumeDB = lch.create_vectorDB_from_text(resume_content_raw)
-        resume_content = lch.extract_info(resumeDB, "Extract all important information from this resume including skills, education, work experience, projects, certifications, and achievements.")
-        
-        jdDB = lch.create_vectorDB_from_text(jd_content_raw)
-        jd_content = lch.extract_info(jdDB, "Extract key requirements and skills from this job description.")
-        
-        result = lch.answer_feedback(resume_content, jd_content, question, answer)
-        return jsonify(result)
+        if not data.get("question") or not data.get("answer"):
+            return jsonify({"error": "Missing question or answer"}), 400
+
+        feedback = lch.answer_feedback(resume_text, jd_text, data["question"], data["answer"])
+        return jsonify(feedback)
     
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"Unexpected server error: {str(e)}"}), 500
+    finally:
+        _cleanup_temp_files()
+
 
 @app.route('/ideal-answer', methods=['POST'])
-def get_ideal_answer():
+def generate_ideal_response():
     try:
-        data = request.get_json()
-        resume_content_raw = data.get('resume_content')
-        jd_content_raw = data.get('jd_content')
-        question = data.get('question')
-        
-        if not all([resume_content_raw, jd_content_raw, question]):
-            return jsonify({"error": "All fields are required"}), 400
-        
-        # Use RAG workflow: Create FAISS vector DBs and extract info
-        resumeDB = lch.create_vectorDB_from_text(resume_content_raw)
-        resume_content = lch.extract_info(resumeDB, "Extract all important information from this resume including skills, education, work experience, projects, certifications, and achievements.")
-        
-        jdDB = lch.create_vectorDB_from_text(jd_content_raw)
-        jd_content = lch.extract_info(jdDB, "Extract key requirements and skills from this job description.")
-        
-        result = lch.generate_ideal_answer(resume_content, jd_content, question)
-        return jsonify(result)
+        resume_query = "Extract candidate strengths and experiences for ideal response."
+        jd_query = "Extract job expectations for crafting ideal answer."
+
+        resume_text, jd_text, error_response = extract_resume_and_jd(request, resume_query, jd_query)
+        if error_response:
+            return error_response
+
+        question = request.get_json().get("question")
+        if not question:
+            return jsonify({"error": "Missing interview question"}), 400
+
+        ideal_response = lch.generate_ideal_answer(resume_text, jd_text, question)
+        return jsonify(ideal_response)
     
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"Unexpected server error: {str(e)}"}), 500
+    finally:
+        _cleanup_temp_files()
 
-@app.route('/ask', methods=['POST'])
-def ask_question():
-    """User-driven Q&A endpoint using RAG"""
-    try:
-        user_question = ""
-        resume_content = ""
-        jd_content = ""
-        
-        # Handle multipart form data (file upload)
-        if request.content_type and 'multipart/form-data' in request.content_type:
-            user_question = request.form.get('question', '').strip()
-            
-            if 'resume' in request.files:
-                resume_file = request.files['resume']
-                if resume_file.filename.endswith('.pdf'):
-                    # Use RAG workflow: Create FAISS vector DB and extract info
-                    with open("temp_resume.pdf", "wb") as f:
-                        f.write(resume_file.read())
-                    resumeDB = lch.create_vectorDB_from_pdf("temp_resume.pdf")
-                    resume_content = lch.extract_info(resumeDB, user_question)
-                else:
-                    return jsonify({"error": "Resume must be a PDF file"}), 400
-            elif 'resumeText' in request.form:
-                resume_text = request.form.get('resumeText', '').strip()
-                # Use RAG workflow: Create FAISS vector DB and extract info
-                resumeDB = lch.create_vectorDB_from_text(resume_text)
-                resume_content = lch.extract_info(resumeDB, user_question)
-            else:
-                return jsonify({"error": "Resume file or text is required"}), 400
-            
-            if 'jobDescriptionFile' in request.files:
-                jd_file = request.files['jobDescriptionFile']
-                if jd_file.filename.endswith('.pdf'):
-                    # Use RAG workflow: Create FAISS vector DB and extract info
-                    with open("temp_jd.pdf", "wb") as f:
-                        f.write(jd_file.read())
-                    jdDB = lch.create_vectorDB_from_pdf("temp_jd.pdf")
-                    jd_content = lch.extract_info(jdDB, user_question)
-                else:
-                    return jsonify({"error": "Job description must be a PDF file"}), 400
-            elif 'jobDescription' in request.form:
-                jd_text = request.form.get('jobDescription', '').strip()
-                # Use RAG workflow: Create FAISS vector DB and extract info
-                jdDB = lch.create_vectorDB_from_text(jd_text)
-                jd_content = lch.extract_info(jdDB, user_question)
-            else:
-                return jsonify({"error": "Job description file or text is required"}), 400
-        else:
-            # Handle JSON data (text input)
-            data = request.get_json()
-            user_question = data.get('question', '').strip()
-            resume_text = data.get('resume_content', '').strip()
-            jd_text = data.get('jd_content', '').strip()
-            
-            # Use RAG workflow for both resume and JD
-            if resume_text:
-                resumeDB = lch.create_vectorDB_from_text(resume_text)
-                resume_content = lch.extract_info(resumeDB, user_question)
-            
-            if jd_text:
-                jdDB = lch.create_vectorDB_from_text(jd_text)
-                jd_content = lch.extract_info(jdDB, user_question)
-        
-        if not user_question:
-            return jsonify({"error": "Question is required"}), 400
-        if not resume_content:
-            return jsonify({"error": "Resume content is required"}), 400
-        if not jd_content:
-            return jsonify({"error": "Job description is required"}), 400
-        
-        # Combine context for comprehensive answer
-        combined_context = f"Resume Information: {resume_content}\n\nJob Description Information: {jd_content}"
-        
-        # Generate answer using LLM with retrieved context
-        llm = lch.ChatGroq(
-            api_key=os.getenv("GROQ_API_KEY"),
-            model="llama-3.3-70b-versatile",
-            temperature=0.7,
-        )
-        
-        prompt = f"""
-        Based on the following context from a resume and job description, answer the user's question.
-
-        Context:
-        {combined_context}
-
-        User Question: {user_question}
-
-        Provide a clear, helpful answer based on the retrieved information. Be specific and actionable.
-        """
-        
-        response = llm.invoke(prompt)
-        
-        # Clean up temporary files
-        cleanup_temp_files()
-        
-        return jsonify({
-            "question": user_question,
-            "answer": response.content.strip()
-        })
-        
-    except Exception as e:
-        cleanup_temp_files()
-        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
-    app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False) 
+    app.run(host='0.0.0.0', port=port, debug=True)
