@@ -5,7 +5,7 @@ import {
   getIdealAnswer,
   getInterviewHistory
 } from '../controllers/interview.controller.js';
-import uploadFile from '../middleware/uploadFile.js'; // ✅ fixed import
+import uploadFile from '../middleware/uploadFile.js'; 
 import protectRoute from '../middleware/protectRoute.js';
 
 const router = express.Router();

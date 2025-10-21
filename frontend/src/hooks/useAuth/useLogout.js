@@ -4,11 +4,13 @@ import { toast } from "react-hot-toast";
 
 const useLogout = () => {
   const [loading, setloading] = useState(false);
-
   const { setAuthUser } = useAuthContext();
 
+  
   const logout = async () => {
     setloading(true);
+
+    // Send POST request to backend
     try {
       const res = await fetch("/api/auth/logout", {
         method: "POST",
@@ -20,8 +22,11 @@ const useLogout = () => {
       if (data.error) {
         throw new Error(data.error);
       }
+
+      // On successful logout, clear user data from localStorage and context
       localStorage.removeItem("user");
       setAuthUser(null);
+      
     } catch (error) {
       toast.error(error.message);
     } finally {

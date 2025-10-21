@@ -11,3 +11,6 @@ const connectToMongoDB = async () => {
 };
 
 export default connectToMongoDB; 
+
+
+// mongoose.connect is a function provided by the Mongoose library that establishes a connection between Node.js application and a MongoDB database.

@@ -4,33 +4,37 @@ import generateTokenAndSetCookie from '../utils/generateToken.js';
 
 export const signup = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
 
+    // Validate input
+    const { name, email, password } = req.body;
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Please provide all fields' });
     }
 
+    // Check if user already exists in MongoDB
     const userExists = await User.findOne({ email });
-
     if (userExists) {
       return res.status(400).json({ error: "User with this email already exists" });
     }
 
-    // Hash password
+    // Hash password with bcrypt
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    // Create new user
     const newUser = new User({
       name,
       email,
       password: hashedPassword,
     });
 
+    
     if (newUser) {
       await newUser.save();
+      // Generate JWT token and set it in a cookie
       generateTokenAndSetCookie(newUser._id, res);
 
-      // Respond without the token in the body
+      // Respond with user info excluding password and token
       res.status(201).json({
         _id: newUser._id,
         name: newUser.name,
@@ -49,20 +53,23 @@ export const signup = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
+
+    // Find user by email in MongoDB
     const user = await User.findOne({ email });
 
+    // Check if user exists and password matches, if not send error response
     const isPasswordCorrect = await bcrypt.compare(
       password,
       user?.password || ""
     );
-
     if (!user || !isPasswordCorrect) {
       return res.status(400).json({ error: "Invalid email or password" });
     }
 
+    // Generate JWT token and set it in a cookie
     generateTokenAndSetCookie(user._id, res);
 
-    // Respond without the token in the body
+    // Respond with user info excluding password and token
     res.status(200).json({
       _id: user._id,
       name: user.name,

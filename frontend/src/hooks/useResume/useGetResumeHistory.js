@@ -2,11 +2,16 @@ import { useState } from "react";
 import toast from "react-hot-toast";
 
 const useGetResumeHistory = () => {
+
   const [loading, setLoading] = useState(false);
+
+  // Initialize state to hold resume history
   const [history, setHistory] = useState([]);
 
   const getResumeHistory = async () => {
     setLoading(true);
+
+    // Sends GET request to backend to fetch resume analysis history
     try {
       const res = await fetch("/api/resume/history", {
         method: "GET",
@@ -15,6 +20,8 @@ const useGetResumeHistory = () => {
         },
         credentials: "include", // important for cookie-based auth
       });
+
+
       const data = await res.json();
       if (data.error) {
         throw new Error(data.error);

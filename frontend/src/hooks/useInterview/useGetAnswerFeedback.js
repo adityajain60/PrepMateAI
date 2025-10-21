@@ -8,6 +8,7 @@ const useGetAnswerFeedback = () => {
   const getAnswerFeedback = async ({ resumeText, jobDescription, question, answer }) => {
     setLoading(true);
     try {
+      // Send POST request to backend
       const res = await fetch("/api/interview/feedback", {
         method: "POST",
         headers: {

@@ -8,6 +8,7 @@ const useGetIdealAnswer = () => {
   const getIdealAnswer = async ({ resumeText, jobDescription, question }) => {
     setLoading(true);
     try {
+      // Send POST request to backend 
       const res = await fetch("/api/interview/ideal-answer", {
         method: "POST",
         headers: {
@@ -16,6 +17,9 @@ const useGetIdealAnswer = () => {
         credentials: "include", // important for cookie-based auth
         body: JSON.stringify({ resumeText, jobDescription, question }),
       });
+
+
+      
       const data = await res.json();
       if (data.error) {
         throw new Error(data.error);

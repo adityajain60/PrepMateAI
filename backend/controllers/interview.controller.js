@@ -3,35 +3,38 @@ import { prepareApiRequest, callPythonService } from '../utils/apiUtils.js';
 
 export const generateQuestions = async (req, res) => {
   try {
+    // 1. Auth check
     if (!req.user?.id) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
-    // ✅ Extract data (from text or file) + additional config fields
+    // 2. Prepare data for Python service
     const { pythonServiceData, headers } = await prepareApiRequest(req);
 
-    // ✅ Send to Python service
+    // 3. Call Python service
     const questionsFromPython = await callPythonService(
-      '/interview/generate',
+      "/interview/generate",
       pythonServiceData,
       headers
     );
 
-    // ✅ Build job description summary (first 200 chars or fallback to file name)
+    // 4. Handle AI response
     const jobDescSummary =
       pythonServiceData.jd_content?.slice(0, 200) ||
-      `Job from file: ${req.files?.jobDescriptionFile?.[0]?.originalname || 'Unknown JD'}`;
+      `Job from file: ${
+        req.files?.jobDescriptionFile?.[0]?.originalname || "Unknown JD"
+      }`;
 
-    // ✅ Save to DB
+    
+    // 5. Save result to history
     const history = await InterviewHistory.create({
       user: req.user.id,
       jobDescription: jobDescSummary,
       questions: questionsFromPython,
     });
 
-    // ✅ Return response
+    // 6. Send result to client
     res.json({ questions: questionsFromPython, interviewId: history._id });
-
   } catch (err) {
     const status = err.response?.status || 500;
     const message = err.response?.data?.error || 'Error generating questions';
@@ -55,16 +58,20 @@ export const getInterviewHistory = async (req, res) => {
 
 export const getAnswerFeedback = async (req, res) => {
   try {
+    // 1. Input validation
     const { resumeText, jobDescription, question, answer } = req.body;
     if (!resumeText || !jobDescription || !question || !answer) {
       return res.status(400).json({ error: 'Resume, JD, question, and answer are required' });
     }
     
-    // 2. Prepare and call Python service using RAG
+    // 2. Prepare Data for Python Service
     const { pythonServiceData, headers } = prepareApiRequest(req);
+
+
+    // 3. Call Python Service
     const result = await callPythonService('/answer-feedback', pythonServiceData, headers);
 
-    // 3. Send result to client
+    // 4. Send result to client
     res.json(result);
   } catch (err) {
     const status = err.response?.status || 500;
@@ -75,16 +82,20 @@ export const getAnswerFeedback = async (req, res) => {
 
 export const getIdealAnswer = async (req, res) => {
   try {
+
+    // 1. Input validation
     const { resumeText, jobDescription, question } = req.body;
     if (!resumeText || !jobDescription || !question) {
       return res.status(400).json({ error: 'Resume, JD, and question are required' });
     }
 
-    // 2. Prepare and call Python service using RAG
+    // 2. Prepare Data for Python Service
     const { pythonServiceData, headers } = prepareApiRequest(req);
+
+    // 3. Call Python Service
     const result = await callPythonService('/ideal-answer', pythonServiceData, headers);
-    
-    // 3. Send result to client
+
+    // 4. Send result to client
     res.json(result);
   } catch (err) {
     const status = err.response?.status || 500;

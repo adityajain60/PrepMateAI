@@ -14,22 +14,22 @@ const useGetInterviewQuestions = () => {
   }) => {
     setLoading(true);
     try {
+      // Create FormData to send files and config
       const formData = new FormData();
       if (resumeFile) formData.append("resume", resumeFile);
       if (resumeText) formData.append("resumeText", resumeText);
       if (jdFile) formData.append("jobDescriptionFile", jdFile);
       if (jdText) formData.append("jobDescription", jdText);
-
       // Append config fields
       Object.entries(config).forEach(([key, value]) => {
         if (Array.isArray(value)) {
-          // Send array as comma-separated string, as FormData doesn't natively support arrays
           formData.append(key, value.join(','));
         } else {
           formData.append(key, value);
         }
       });
       
+      // Send POST request to backend
       const res = await fetch("/api/interview/generate", {
         method: "POST",
         credentials: "include",
