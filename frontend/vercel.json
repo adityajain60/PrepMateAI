@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://prepmateai-backend-jfap.onrender.com/api/$1"
+    }
+  ]
+}
