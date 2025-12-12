@@ -159,7 +159,11 @@ def feedback_on_answer():
         if error_response:
             return error_response
 
-        data = request.get_json()
+        # Handle both multipart/form-data and JSON
+        data = request.form if 'multipart/form-data' in (request.content_type or "") else request.get_json()
+        if data is None:
+            data = {}
+
         if not data.get("question") or not data.get("answer"):
             return jsonify({"error": "Missing question or answer"}), 400
 
@@ -182,7 +186,12 @@ def generate_ideal_response():
         if error_response:
             return error_response
 
-        question = request.get_json().get("question")
+        # Handle both multipart/form-data and JSON
+        data = request.form if 'multipart/form-data' in (request.content_type or "") else request.get_json()
+        if data is None:
+            data = {}
+
+        question = data.get("question")
         if not question:
             return jsonify({"error": "Missing interview question"}), 400
 
